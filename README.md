@@ -12,7 +12,7 @@ Ein schlanker, multidomain-fähiger **ARC (Authenticated Received Chain) Milter*
 ## Installation
 
 ```bash
-git clone [https://dein-gitea.tld/username/pyarc-milter.git](https://dein-gitea.tld/username/pyarc-milter.git)
+git clone https://git.bouquet24.de/paase/pyarc.git
 cd pyarc
 sudo ./install.sh
 
