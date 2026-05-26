@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+import sys
+import os
+import configparser
+import argparse
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import serialization
+
+CONFIG_PATH = "/etc/pyarc/milter.conf"
+
+def main():
+    parser = argparse.ArgumentParser(description="Schlüsselgenerator für den Custom ARC Milter")
+    parser.add_argument("domain", help="Die Domain, für die ein ARC-Schlüsselpaar generiert werden soll")
+    args = parser.parse_args()
+
+    domain = args.domain.lower().strip()
+    config = configparser.ConfigParser()
+
+    if not os.path.exists(CONFIG_PATH):
+        print(f"Fehler: Konfigurationsdatei {CONFIG_PATH} nicht gefunden.", file=sys.stderr)
+        sys.exit(1)
+
+    config.read(CONFIG_PATH)
+
+    if not config.has_section(domain):
+        print(f"Fehler: Domain '{domain}' ist nicht in der {CONFIG_PATH} eingetragen.", file=sys.stderr)
+        print("Bitte lege zuerst die Sektion für die Domain in der Config an. Beispiel:", file=sys.stderr)
+        print(f"\n[{domain}]\nselector = arc2026\nprivate_key_path = /etc/pyarc/certs/{domain}.private.key\n", file=sys.stderr)
+        sys.exit(1)
+
+    selector = config.get(domain, "selector", fallback="arc2026")
+    key_path = config.get(domain, "private_key_path")
+
+    if os.path.exists(key_path):
+        print(f"Abbruch: Key-Datei existiert bereits unter: {key_path}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Generiere 2048-Bit RSA Schlüssel für {domain}...")
+
+    try:
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048
+        )
+
+        log_dir = os.path.dirname(key_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+
+        pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+
+        with open(key_path, "wb") as f:
+            f.write(pem)
+
+        os.chmod(key_path, 0o640)
+        
+        if os.path.exists("/etc/pyarc"):
+            stat_info = os.stat("/etc/pyarc")
+            os.chown(key_path, stat_info.st_uid, stat_info.st_gid)
+
+        print(f"✔ Private Key erfolgreich gespeichert unter: {key_path}")
+
+        public_key = private_key.public_key()
+        pub_pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+
+        pub_lines = pub_pem.decode('utf-8').splitlines()
+        pub_key_clean = "".join(pub_lines[1:-1])
+
+        print("\n" + "="*60)
+        print(f"DEIN DNS-TXT-RECORD FÜR {domain}:")
+        print("="*60)
+        print(f"{selector}._domainkey.{domain}.  IN  TXT  \"v=DKIM1; k=rsa; p={pub_key_clean}\"")
+        print("="*60 + "\n")
+
+    except Exception as e:
+        print(f"Ein unerwarteter Fehler ist aufgetreten: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

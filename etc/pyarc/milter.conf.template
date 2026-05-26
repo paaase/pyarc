@@ -1,0 +1,20 @@
+[general]
+auth_serv_id = mx01.domain.tld
+listen_socket = inet:8899@127.0.0.1
+
+[logging]
+file_logging = True
+log_file = /var/log/pyarc/pyarc.log
+
+[validation]
+reject_on_fail = False
+
+# --- Beispiel für eine Domain ---
+#[domain.tld]
+#selector = arc2026
+#private_key_path = /etc/pyarc/certs/domain.tld.private.key
+
+#
+#[domain2.tld]
+#selector = arc2026
+#private_key_path = /etc/pyarc/certs/domain2.tld.private.key

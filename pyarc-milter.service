@@ -1,0 +1,12 @@
+[Unit]
+Description=Custom Postfix ARC Milter
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/my_arc_milter.py
+Restart=on-failure
+User=postfix
+
+[Install]
+WantedBy=multi-user.target

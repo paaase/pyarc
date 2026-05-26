@@ -1,0 +1,10 @@
+# Lokale Krypto-Schlüssel und Configs ignorieren
+etc/pyarc/certs/
+etc/pyarc/milter.conf
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Logs
+var/log/
