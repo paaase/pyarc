@@ -7,7 +7,11 @@ import configparser
 import os
 import re
 import logging
+from datetime import datetime
 from io import BytesIO
+
+# Erhöht den DNS-Timeout für dkimpy bei großen Keys
+dkim.dns_timeout = 15
 
 CONFIG_PATH = "/etc/pyarc/milter.conf"
 config = configparser.ConfigParser()
@@ -79,6 +83,15 @@ class ArcMilter(Milter.Base):
         full_mail = b"".join([b"%s: %s\r\n" % (k, v) for k, v in self.headers]) + b"\r\n" + self.body_buffer.read()
         
         try:
+            # 1. Vorhandene X-ARC Header aus früheren Stationen entfernen
+            idx = 1
+            while True:
+                try:
+                    self.changeheader('X-ARC', idx, '')
+                    idx += 1
+                except:
+                    break
+
             # --- 1. Eingehend: ARC Validierung ---
             arc_verifier = dkim.ARC(full_mail)
             cv, results, comment = arc_verifier.verify()
@@ -87,45 +100,62 @@ class ArcMilter(Milter.Base):
             logger.info(f"[{self.id}] Validierung für Domain '{self.from_domain}': CV={cv_str} ({comment})")
             self.addheader('Authentication-Results', f"{AUTH_SERV_ID}; arc={cv_str}")
             
-            is_arc_valid = (cv_str == "pass")
+            # Kette ist valide, wenn pass ODER ein unbeflecktes none vorliegt
+            is_arc_valid = (cv_str in ["pass", "none"] and "fail" not in comment.lower())
 
             if cv_str == "fail" and REJECT_ON_FAIL:
                 logger.warning(f"[{self.id}] Mail abgewiesen: ARC Validation fehlgeschlagen.")
                 self.setreply('550', '5.7.1', 'ARC validation failed')
                 return Milter.REJECT
 
-            # --- 2. Ausgehend: Dynamische ARC Signierung ---
+            # --- 2. Ausgehend / First-Hop: Dynamische ARC Signierung ---
+            sign_domain = None
+            selector = None
+            key_path = None
+
             if self.from_domain and config.has_section(self.from_domain):
+                sign_domain = self.from_domain
                 selector = config.get(self.from_domain, "selector")
                 key_path = config.get(self.from_domain, "private_key_path")
-                
-                if os.path.exists(key_path):
-                    with open(key_path, "rb") as f:
-                        private_key = f.read()
-                    
-                    sig_headers = dkim.arc_sign(
-                        full_mail,
-                        selector=selector.encode('utf-8'),
-                        domain=self.from_domain.encode('utf-8'),
-                        privkey=private_key,
-                        srv_id=AUTH_SERV_ID.encode('utf-8')
-                    )
-                    
-                    for header_line in sig_headers:
-                        if b':' in header_line:
-                            name, val = header_line.split(b':', 1)
-                            self.addheader(name.decode('utf-8').strip(), val.decode('utf-8').strip())
-                            
-                    logger.info(f"[{self.id}] Mail für {self.from_domain} erfolgreich signiert (Selector: {selector}).")
-                    is_arc_valid = True
-                  else:
-                    logger.error(f"[{self.id}] Key für {self.from_domain} nicht gefunden unter {key_path}")
-
-            self.addheader('X-ARC', 'TRUE' if is_arc_valid else 'FALSE')
             
+            elif cv_str == "none":
+                main_domain = ".".join(AUTH_SERV_ID.split(".")[-2:])
+                if config.has_section(main_domain):
+                    sign_domain = main_domain
+                    selector = config.get(main_domain, "selector")
+                    key_path = config.get(main_domain, "private_key_path")
+                    logger.info(f"[{self.id}] Keine ARC-Kette vorhanden (CV=none). Starte neue Kette für lokale Hauptdomain {main_domain}.")
+
+            if sign_domain and key_path and os.path.exists(key_path):
+                with open(key_path, "rb") as f:
+                    private_key = f.read()
+
+                sig_headers = dkim.arc_sign(
+                    full_mail,
+                    selector=selector.encode('utf-8'),
+                    domain=sign_domain.encode('utf-8'),
+                    privkey=private_key,
+                    srv_id=AUTH_SERV_ID.encode('utf-8')
+                )
+
+                for header_line in sig_headers:
+                    if b':' in header_line:
+                        name, val = header_line.split(b':', 1)
+                        self.addheader(name.decode('utf-8').strip(), val.decode('utf-8').strip())
+
+                logger.info(f"[{self.id}] Mail erfolgreich ARC-versiegelt (Domain: {sign_domain}, Selector: {selector}).")
+                is_arc_valid = True
+            elif sign_domain:
+                logger.error(f"[{self.id}] Key für {sign_domain} nicht gefunden unter {key_path}")
+
+            # --- 3. Einmaliges Setzen des X-ARC Headers ---
+            already_added = any(h[0].lower() == b'x-arc' for h in self.headers)
+            if not already_added:
+                self.addheader('X-ARC', 'TRUE' if is_arc_valid else 'FALSE')
+
         except Exception as e:
             logger.error(f"[{self.id}] Fehler beim ARC-Processing: {e}", exc_info=True)
-            
+
         return Milter.CONTINUE
 
 def main():
