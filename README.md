@@ -16,3 +16,27 @@ git clone https://git.bouquet24.de/paase/pyarc.git
 cd pyarc
 sudo ./install.sh
 
+```
+
+```bash
+/etc/pyarc/milter.conf bearbeiten.
+
+
+``` 
+
+
+## PMG
+```bash
+ 
+cp /var/lib/pmg/templates/main.cf.in /etc/pmg/templates/main.cf.in
+
+nano /etc/pmg/templates/main.cf.in
+
+
+# Eigene Python-ARC-Milter Anbindung
+smtpd_milters = inet:127.0.0.1:8899
+non_smtpd_milters = inet:127.0.0.1:8899
+
+# Wichtig: Was passiert, wenn der Milter mal abstürzt?
+# 'accept' lässt Mails trotzdem durchgehen (empfohlen). 'reject' blockiert den Mailversand komplett.
+milter_default_action = accept
