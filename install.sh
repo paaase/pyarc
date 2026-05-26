@@ -33,6 +33,10 @@ cp usr/local/bin/pyarc-milter /usr/local/bin/
 cp usr/local/bin/pyarc-gen /usr/local/bin/
 chmod +x /usr/local/bin/pyarc-milter
 chmod +x /usr/local/bin/pyarc-gen
+mkdir -p /var/log/pyarc
+touch /var/log/pyarc/pyarc.log
+
+
 
 # Config-Template kopieren falls nicht vorhanden
 if [ ! -f /etc/pyarc/milter.conf ]; then
@@ -45,6 +49,7 @@ chown -R postfix:postfix /etc/pyarc
 chown -R postfix:postfix /var/log/pyarc
 chmod 750 /etc/pyarc
 chmod 755 /var/log/pyarc
+chmod 640 /var/log/pyarc/pyarc.log
 
 # 6. Systemd Service anpassen und erstellen
 echo "--> Erstelle Systemd-Service..."

@@ -3,6 +3,7 @@ import sys
 import os
 import configparser
 import argparse
+from datetime import datetime
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
@@ -28,7 +29,8 @@ def main():
         print(f"\n[{domain}]\nselector = arc2026\nprivate_key_path = /etc/pyarc/certs/{domain}.private.key\n", file=sys.stderr)
         sys.exit(1)
 
-    selector = config.get(domain, "selector", fallback="arc2026")
+	current_year = datetime.now().strftime("%Y")
+    selector = config.get(domain, "selector", fallback=f"arc{current_year}")
     key_path = config.get(domain, "private_key_path")
 
     if os.path.exists(key_path):
