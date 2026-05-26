@@ -12,6 +12,7 @@ CONFIG_PATH = "/etc/pyarc/milter.conf"
 def main():
     parser = argparse.ArgumentParser(description="Schlüsselgenerator für den Custom ARC Milter")
     parser.add_argument("domain", help="Die Domain, für die ein ARC-Schlüsselpaar generiert werden soll")
+    parser.add_argument("-s", "--selector", help="Optional: Spezifischer Selector für diesen Key (überschreibt die Config)")
     args = parser.parse_args()
 
     domain = args.domain.lower().strip()
@@ -25,19 +26,21 @@ def main():
 
     if not config.has_section(domain):
         print(f"Fehler: Domain '{domain}' ist nicht in der {CONFIG_PATH} eingetragen.", file=sys.stderr)
-        print("Bitte lege zuerst die Sektion für die Domain in der Config an. Beispiel:", file=sys.stderr)
-        print(f"\n[{domain}]\nselector = arc2026\nprivate_key_path = /etc/pyarc/certs/{domain}.private.key\n", file=sys.stderr)
         sys.exit(1)
 
-	current_year = datetime.now().strftime("%Y")
-    selector = config.get(domain, "selector", fallback=f"arc{current_year}")
+    if args.selector:
+        selector = args.selector.strip()
+    else:
+        current_year = datetime.now().strftime("%Y")
+        selector = config.get(domain, "selector", fallback=f"arc{current_year}")
+
     key_path = config.get(domain, "private_key_path")
 
     if os.path.exists(key_path):
         print(f"Abbruch: Key-Datei existiert bereits unter: {key_path}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Generiere 2048-Bit RSA Schlüssel für {domain}...")
+    print(f"Generiere 2048-Bit RSA Schlüssel für {domain} (Selector: {selector})...")
 
     try:
         private_key = rsa.generate_private_key(
