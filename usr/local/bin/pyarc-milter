@@ -100,7 +100,6 @@ class ArcMilter(Milter.Base):
             logger.info(f"[{self.id}] Validierung für Domain '{self.from_domain}': CV={cv_str} ({comment})")
             self.addheader('Authentication-Results', f"{AUTH_SERV_ID}; arc={cv_str}")
             
-            # Kette ist valide, wenn pass ODER ein unbeflecktes none vorliegt
             is_arc_valid = (cv_str in ["pass", "none"] and "fail" not in comment.lower())
 
             if cv_str == "fail" and REJECT_ON_FAIL:
@@ -140,8 +139,36 @@ class ArcMilter(Milter.Base):
 
                 for header_line in sig_headers:
                     if b':' in header_line:
-                        name, val = header_line.split(b':', 1)
-                        self.addheader(name.decode('utf-8').strip(), val.decode('utf-8').strip())
+                        # 1. Header in Name und Wert splitten
+                        name_bytes, val_bytes = header_line.split(b':', 1)
+                        name = name_bytes.decode('utf-8').strip()
+                        
+                        # 2. Den Wert komplett von allen Umbrüchen und doppelten Leerzeichen befreien (linearisieren)
+                        val_clean = " ".join(val_bytes.decode('utf-8').split())
+                        
+                        # 3. Das Folding selbst bauen: Alle 72 Zeichen sauber mit Umbruch + Tab trennen (Rspamd-Style)
+                        # Wir splitten den langen String in verdauliche Häppchen
+                        chunks = []
+                        # Der erste Chunk darf etwas länger sein, da der Headername schon links steht
+                        remaining = val_clean
+                        
+                        # Wir brechen den Text sauber in Zeilen auf
+                        while len(remaining) > 72:
+                            # Suche das letzte Leerzeichen innerhalb der ersten 72 Zeichen für einen schönen Umbruch
+                            split_idx = remaining.rfind(' ', 0, 72)
+                            if split_idx == -1:  # Kein Leerzeichen gefunden (z.B. mitten im Base64-Blob)
+                                split_idx = 72
+                            
+                            chunks.append(remaining[:split_idx].strip())
+                            remaining = remaining[split_idx:].strip()
+                        if remaining:
+                            chunks.append(remaining)
+                        
+                        # Die Zeilen mit einem harten Umbruch und einem führenden TAB (\n\t) für Postfix verbinden
+                        folded_value = "\n\t".join(chunks)
+                        
+                        # Übergabe an Postfix libmilter
+                        self.addheader(name, folded_value)
 
                 logger.info(f"[{self.id}] Mail erfolgreich ARC-versiegelt (Domain: {sign_domain}, Selector: {selector}).")
                 is_arc_valid = True
