@@ -98,7 +98,9 @@ class ArcMilter(Milter.Base):
             cv_str = cv.decode('utf-8') if isinstance(cv, bytes) else str(cv)
             
             logger.info(f"[{self.id}] Validierung für Domain '{self.from_domain}': CV={cv_str} ({comment})")
-            self.addheader('Authentication-Results', f"{AUTH_SERV_ID}; arc={cv_str}")
+            
+            # Korrigiert: addheader mit Index 0 fügt den Header ganz oben ein
+            self.addheader('Authentication-Results', f"{AUTH_SERV_ID}; arc={cv_str}", 0)
             
             is_arc_valid = (cv_str in ["pass", "none"] and "fail" not in comment.lower())
 
@@ -142,7 +144,9 @@ class ArcMilter(Milter.Base):
                     srv_id=AUTH_SERV_ID.encode('utf-8')
                 )
 
-                for header_line in sig_headers:
+                # Wir kehren die Liste um, damit beim Einfügen an Index 0 
+                # die Reihenfolge (Seal -> Signature -> Results) logisch bleibt
+                for header_line in reversed(sig_headers):
                     if b':' in header_line:
                         name_bytes, val_bytes = header_line.split(b':', 1)
                         name = name_bytes.decode('utf-8').strip()
@@ -163,7 +167,9 @@ class ArcMilter(Milter.Base):
                             chunks.append(remaining)
                         
                         folded_value = "\n\t".join(chunks)
-                        self.addheader(name, folded_value)
+                        
+                        # Korrigiert: addheader mit Index 0 schiebt die Krypto-Header an die Spitze
+                        self.addheader(name, folded_value, 0)
 
                 logger.info(f"[{self.id}] Mail erfolgreich ARC-versiegelt (Domain: {sign_domain}, Selector: {selector}).")
                 is_arc_valid = True
@@ -173,7 +179,8 @@ class ArcMilter(Milter.Base):
             # --- 3. Einmaliges Setzen des X-ARC Headers ---
             already_added = any(h[0].lower() == b'x-arc' for h in self.headers)
             if not already_added:
-                self.addheader('X-ARC', 'TRUE' if is_arc_valid else 'FALSE')
+                # Korrigiert: Auch das X-ARC Flag wird mit Index 0 ganz oben angepinnt
+                self.addheader('X-ARC', 'TRUE' if is_arc_valid else 'FALSE', 0)
 
         except Exception as e:
             logger.error(f"[{self.id}] Fehler beim ARC-Processing: {e}", exc_info=True)
